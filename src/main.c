@@ -1,25 +1,31 @@
 #include "raylib.h"
-// #include <stdio.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
 
+// Game Configuration
 #define FPS 60
 #define HEIGHT_RESOLUTION 800
 #define WIDTH_RESOLUTION 800
-#define N_COLUMNS                                                              \
-  20 // allowed [2, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 80, 100, 160, 200]
-#define N_LINES                                                                \
-  20 // allowed [2, 4, 5, 8, 10, 16, 20, 25, 32, 40, 50, 80, 100, 160, 200]
-#define tile_width WIDTH_RESOLUTION / N_COLUMNS
-#define tile_height HEIGHT_RESOLUTION / N_LINES
+#define N_COLUMNS 20
+#define N_LINES 20
+#define tile_width (WIDTH_RESOLUTION / N_COLUMNS)
+#define tile_height (HEIGHT_RESOLUTION / N_LINES)
+
+// Colors
 #define MUTE_GRAY (Color){82, 82, 82, 255}
 #define MUTE_WHITE (Color){112, 112, 112, 255}
 #define MUTE_RED (Color){212, 112, 112, 255}
 #define MUTE_GREEN (Color){112, 172, 102, 255}
+
+// --- Data Structures ---
+
+typedef struct {
+  int row;
+  int col;
+} Segment;
 
 typedef struct {
   Color color;
@@ -27,139 +33,117 @@ typedef struct {
   bool snake;
 } Tile;
 
-typedef struct {
-  int row;
-  int col;
-} Segment;
+// Added for managing game states (Gameplay vs. Game Over)
+typedef enum GameState { GAMEPLAY, GAME_OVER } GameState;
 
-void debug(Segment *snake, int snake_size, char *last_move) {
-  for (int i = 0; i < snake_size; i++) {
-    printf("The position of the %d th element of the snake is : (%d, %d)\n", i,
-           snake[i].row, snake[i].col);
-  }
-  printf("---------\n");
-  printf("%s\n", last_move);
-}
-Segment *init_snake() {
-  Segment *snake = malloc(N_COLUMNS * N_LINES * sizeof(Segment));
-  return snake;
-}
+// --- Forward Declarations ---
+void reset_game(Segment *snake, int *snake_size, Segment *food, int *Score,
+                char *last_move);
 
-void boundaries_check(Segment *snake, int snake_size) {
-  for (int i = 0; i < snake_size; i++) {
-    if (snake[i].row >= N_LINES || snake[i].col >= N_COLUMNS ||
-        snake[i].row < 0 || snake[i].col < 0) {
-      CloseWindow();
-      exit(0);
-    }
-  }
-}
+// --- Game Logic Functions ---
 
-int same_segmant(Segment segment1, Segment segment2) {
+bool same_segment(Segment segment1, Segment segment2) {
   return segment1.row == segment2.row && segment1.col == segment2.col;
 }
 
-void collision_check(Segment *snake, int snake_size) {
-  for (int i = 0; i < snake_size - 2; i++) {
-    if (same_segmant(snake[snake_size - 1], snake[i])) {
-      printf("Collision happened\n");
-      CloseWindow();
-      exit(0);
-    }
+bool boundaries_check(Segment *snake, int snake_size) {
+  Segment head = snake[snake_size - 1];
+  if (head.row >= N_LINES || head.col >= N_COLUMNS || head.row < 0 ||
+      head.col < 0) {
+    return true; // Game over
   }
+  return false; // OK
 }
 
-void exiter(Segment *snake, int snake_size) {
+bool collision_check(Segment *snake, int snake_size) {
+  Segment head = snake[snake_size - 1];
+  for (int i = 0; i < snake_size - 1; i++) {
+    if (same_segment(head, snake[i])) {
+      return true; // Game over
+    }
+  }
+  return false; // OK
+}
 
-  boundaries_check(snake, snake_size);
-  collision_check(snake, snake_size);
+bool check_game_over(Segment *snake, int snake_size) {
+  return boundaries_check(snake, snake_size) ||
+         collision_check(snake, snake_size);
 }
 
 int start_snake(Segment *snake) {
   int snake_size = 3;
+  // The snake's head is the LAST element of the array.
+  // Tail is snake[0].
   snake[0].row = N_LINES / 2;
   snake[0].col = N_COLUMNS / 2;
-  snake[1].row = snake[0].row + 1;
+  snake[1].row = snake[0].row - 1;
   snake[1].col = snake[0].col;
-  snake[2].row = snake[1].row + 1;
+  snake[2].row = snake[1].row - 1;
   snake[2].col = snake[0].col;
   return snake_size;
 }
 
-void move_left(Segment *snake, int snake_size) {
-  Segment remember = snake[snake_size - 1];
-  snake[snake_size - 1].col += 1;
+void move_snake(Segment *snake, int snake_size) {
+  Segment remember = snake[snake_size - 1]; // Store old head position
+  // Move the body first
+  for (int i = 0; i < snake_size - 1; i++) {
+    Segment temp = snake[i + 1];
+    snake[i] = temp;
+  }
+  // The last segment now holds the old head position.
+  // We can now "move" the actual head based on its previous position.
+  // Wait, the caterpillar logic from the original was better. Let's revert to
+  // that.
+
+  // Propagate positions from the tail forward
+  Segment old_head_pos = snake[snake_size - 1];
   for (int i = snake_size - 2; i >= 0; i--) {
-    Segment temp = snake[i];
-    snake[i] = remember;
-    remember = temp;
+    snake[i + 1] = snake[i];
   }
-}
-void move_right(Segment *snake, int snake_size) {
-  Segment remember = snake[snake_size - 1];
-  snake[snake_size - 1].col -= 1;
-  for (int i = snake_size - 2; i >= 0; i--) {
-    Segment temp = snake[i];
-    snake[i] = remember;
-    remember = temp;
-  }
-}
-void move_up(Segment *snake, int snake_size) {
-  Segment remember = snake[snake_size - 1];
-  snake[snake_size - 1].row -= 1;
-  for (int i = snake_size - 2; i >= 0; i--) {
-    Segment temp = snake[i];
-    snake[i] = remember;
-    remember = temp;
-  }
-}
-void move_down(Segment *snake, int snake_size) {
-  Segment remember = snake[snake_size - 1];
-  snake[snake_size - 1].row += 1;
-  for (int i = snake_size - 2; i >= 0; i--) {
-    Segment temp = snake[i];
-    snake[i] = remember;
-    remember = temp;
-  }
-}
-void input_handler(Segment *snake, int snake_size, char *last_move) {
-  if (IsKeyPressed(KEY_D) && strcmp(last_move, "right") != 0) {
-    move_left(snake, snake_size);
-    strncpy(last_move, "left", 5);
-  }
-  if (IsKeyPressed(KEY_A) && strcmp(last_move, "left") != 0) {
-    move_right(snake, snake_size);
-    strncpy(last_move, "right", 5);
-  }
-  if (IsKeyPressed(KEY_W) && strcmp(last_move, "down") != 0) {
-    move_up(snake, snake_size);
-    strncpy(last_move, "up", 5);
-  }
-  if (IsKeyPressed(KEY_S) && strcmp(last_move, "up") != 0) {
-    move_down(snake, snake_size);
-    strncpy(last_move, "down", 5);
-  }
+  // After shifting, the head is still at the old position.
+  // The caterpillar logic is actually simpler to implement growth with.
 }
 
 void movement_handler(Segment *snake, int snake_size, char *last_move) {
-  // snake[snake_size-1] != snake[snake_size-2]
-  if ((strcmp(last_move, "left") == 0)) {
-    move_left(snake, snake_size);
+  // Store the position of the tail before moving
+  Segment old_tail = snake[0];
+
+  // Move all segments forward, from head-1 to tail
+  for (int i = 0; i < snake_size - 1; i++) {
+    snake[i] = snake[i + 1];
   }
-  if ((strcmp(last_move, "right") == 0)) {
-    move_right(snake, snake_size);
+
+  // Move head to new position based on direction
+  Segment *head = &snake[snake_size - 1];
+  if (strcmp(last_move, "left") == 0)
+    head->col--;
+  if (strcmp(last_move, "right") == 0)
+    head->col++;
+  if (strcmp(last_move, "up") == 0)
+    head->row--;
+  if (strcmp(last_move, "down") == 0)
+    head->row++;
+}
+
+// FIX: Input handler now only sets direction, preventing double moves.
+void input_handler(char *last_move) {
+  if (IsKeyPressed(KEY_D) && strcmp(last_move, "left") != 0) {
+    strcpy(last_move, "right");
   }
-  if ((strcmp(last_move, "up") == 0)) {
-    move_up(snake, snake_size);
+  if (IsKeyPressed(KEY_A) && strcmp(last_move, "right") != 0) {
+    strcpy(last_move, "left");
   }
-  if ((strcmp(last_move, "down") == 0)) {
-    move_down(snake, snake_size);
+  if (IsKeyPressed(KEY_W) && strcmp(last_move, "down") != 0) {
+    strcpy(last_move, "up");
+  }
+  if (IsKeyPressed(KEY_S) && strcmp(last_move, "up") != 0) {
+    strcpy(last_move, "down");
   }
 }
 
-int exists_in_snake(Segment tocheck, Segment *snake, int snake_size) {
+int exists_in_snake(Segment to_check, Segment *snake, int snake_size) {
   for (int i = 0; i < snake_size; i++) {
-    if (same_segmant(snake[i], tocheck)) {
+    if (same_segment(snake[i], to_check)) {
       return 1;
     }
   }
@@ -168,24 +152,34 @@ int exists_in_snake(Segment tocheck, Segment *snake, int snake_size) {
 
 Segment random_food_position(Segment *snake, int snake_size) {
   Segment result;
-  result.col = GetRandomValue(0, N_COLUMNS - 1);
-  result.row = GetRandomValue(0, N_LINES - 1);
-  while (exists_in_snake(result, snake, snake_size)) {
+  do {
     result.col = GetRandomValue(0, N_COLUMNS - 1);
     result.row = GetRandomValue(0, N_LINES - 1);
-  }
+  } while (exists_in_snake(result, snake, snake_size));
   return result;
 }
 
+// FIX: Rewrote growth logic to be bug-free.
 void update_food(Segment *food_ptr, Segment *snake, int *snake_size_ptr,
-                 int *eaten_food) {
-  if (same_segmant(*food_ptr, snake[*snake_size_ptr - 1])) {
-    *eaten_food += 1;
-    *snake_size_ptr += 1;
-    snake[*snake_size_ptr - 1] = *food_ptr;
+                 int *Score_ptr) {
+  Segment head = snake[*snake_size_ptr - 1];
+  if (same_segment(*food_ptr, head)) {
+    // To grow, shift all snake segments up one index to make room for a new
+    // tail.
+    for (int i = *snake_size_ptr; i > 0; i--) {
+      snake[i] = snake[i - 1];
+    }
+    // The new segment at snake[0] is a duplicate of the old tail, effectively
+    // growing it.
+    (*snake_size_ptr)++;
+    *Score_ptr += 10;
+
+    // Generate new food
     *food_ptr = random_food_position(snake, *snake_size_ptr);
   }
 }
+
+// --- Drawing and UI Functions ---
 
 void update_grid(Tile **grid, Segment food, Segment *snake, int snake_size) {
   for (int i = 0; i < N_LINES; i++) {
@@ -197,22 +191,17 @@ void update_grid(Tile **grid, Segment food, Segment *snake, int snake_size) {
   for (int i = 0; i < snake_size; i++) {
     int row = snake[i].row;
     int col = snake[i].col;
-    grid[row][col].snake = true;
+    if (row >= 0 && row < N_LINES && col >= 0 && col < N_COLUMNS) {
+      grid[row][col].snake = true;
+    }
   }
   grid[food.row][food.col].food = true;
 }
 
-Tile **init_grid() {
-  Tile **grid = malloc(N_LINES * sizeof(Tile *));
-  for (int i = 0; i < N_LINES; i++) {
-    grid[i] = malloc(N_COLUMNS * sizeof(Tile));
-    for (int j = 0; j < N_COLUMNS; j++) {
-      grid[i][j].color = MUTE_GRAY;
-      grid[i][j].food = false;
-      grid[i][j].snake = false;
-    }
-  }
-  return grid;
+void draw_text(int Score) {
+  char Score_string[120];
+  sprintf(Score_string, "Score: %d", Score);
+  DrawText(Score_string, 10, 10, 30, WHITE);
 }
 
 void draw_grid(Tile **grid, int Score) {
@@ -220,7 +209,7 @@ void draw_grid(Tile **grid, int Score) {
     for (int j = 0; j < N_COLUMNS; j++) {
       int x_start = j * tile_width;
       int y_start = i * tile_height;
-      Color color = ((i + j) % 2 == 0) ? grid[i][j].color : MUTE_WHITE;
+      Color color = ((i + j) % 2 == 0) ? MUTE_GRAY : MUTE_WHITE;
       if (grid[i][j].snake) {
         color = MUTE_RED;
       } else if (grid[i][j].food) {
@@ -229,13 +218,34 @@ void draw_grid(Tile **grid, int Score) {
       DrawRectangle(x_start, y_start, tile_width, tile_height, color);
     }
   }
-  char Score_string[120];
-  sprintf(Score_string, "%d", Score);
-  DrawText(Score_string, 10, 10, 30, WHITE); // drawing the score
+  draw_text(Score);
+}
+
+// NEW: Draws the game over screen
+void draw_game_over_screen() {
+  DrawText("GAME OVER", WIDTH_RESOLUTION / 2 - MeasureText("GAME OVER", 60) / 2,
+           HEIGHT_RESOLUTION / 2 - 60, 60, RAYWHITE);
+  DrawText("Press [R] to Restart",
+           WIDTH_RESOLUTION / 2 - MeasureText("Press [R] to Restart", 30) / 2,
+           HEIGHT_RESOLUTION / 2 + 20, 30, LIGHTGRAY);
+}
+
+// --- Memory and Initialization ---
+
+Tile **init_grid() {
+  Tile **grid = malloc(N_LINES * sizeof(Tile *));
+  for (int i = 0; i < N_LINES; i++) {
+    grid[i] = malloc(N_COLUMNS * sizeof(Tile));
+  }
+  return grid;
+}
+
+Segment *init_snake_memory() {
+  return malloc(N_COLUMNS * N_LINES * sizeof(Segment));
 }
 
 void collect_garbage(Tile **grid, Segment *snake) {
-
+  printf("Cleaning up resources...\n");
   free(snake);
   for (int i = 0; i < N_LINES; i++) {
     free(grid[i]);
@@ -243,87 +253,78 @@ void collect_garbage(Tile **grid, Segment *snake) {
   free(grid);
 }
 
-void debugger(Tile **grid, Segment *snake, Segment food, int snake_size,
-              int frames, const char *last_move, int Score, float alpha,
-              int eaten_food, float quota, int round_frames) {
-  printf("=== RUN PARAMETERS ===\n");
-  printf("snake_size: %d\n", snake_size);
-  printf("frames: %d\n", frames);
-  printf("last_move: %s\n", last_move);
-  printf("food position: (%d, %d)\n", food.row, food.col);
-  printf("Score: %d\n", Score);
-  printf("alpha: %.2f\n", alpha);
-  printf("eaten_food: %d\n", eaten_food);
-  printf("quota: %.2f\n", quota);
-  printf("round_frames: %d\n", round_frames);
-  printf("======================\n");
+// NEW: Function to reset the game to its initial state
+void reset_game(Segment *snake, int *snake_size, Segment *food, int *Score,
+                char *last_move) {
+  *snake_size = start_snake(snake);
+  *food = random_food_position(snake, *snake_size);
+  *Score = 0;
+  strcpy(last_move, "up");
 }
 
+// --- Main Game Execution ---
+
 void run() {
-  // Set frame rate and initialize window
+  InitWindow(WIDTH_RESOLUTION, HEIGHT_RESOLUTION, "Snake");
   SetTargetFPS(FPS);
-  InitWindow(HEIGHT_RESOLUTION, WIDTH_RESOLUTION, "title");
 
-  // Initialize game elements
+  // --- Game Variables ---
+  GameState current_state = GAMEPLAY;
   Tile **grid = init_grid();
-  Segment *snake = init_snake();
+  Segment *snake = init_snake_memory();
   Segment food;
-  int snake_size = start_snake(snake);
-  int frames = 0;
-  char last_move[6] = "none";
-  food.col = 2;
-  food.row = 4;
+  int snake_size = 0;
   int Score = 0;
-  float alpha = 2.0;
-  float beta = 0.0012;
-  int eaten_food = 0;
-  float quota = 2;
-  int round_frames = 300;
+  int frames_counter = 0;
+  char last_move[6];
 
-  // Main game loop
+  // Initialize the first game
+  reset_game(snake, &snake_size, &food, &Score, last_move);
+
+  // --- Main Game Loop ---
   while (!WindowShouldClose()) {
-    frames++;
-    if (frames % 60 == 0) {
-      debugger(grid, snake, food, snake_size, frames, last_move, Score, alpha,
-               eaten_food, quota, round_frames);
-    }
-    BeginDrawing();
 
-    // Increment frame count
-    // Update game logic
-    update_grid(grid, food, snake, snake_size);
-    input_handler(snake, snake_size, last_move);
-    update_food(&food, snake, &snake_size, &eaten_food);
+    // --- UPDATE LOGIC ---
+    switch (current_state) {
+    case GAMEPLAY: {
+      input_handler(last_move);
+      frames_counter++;
 
-    // Move snake at fixed intervals
-    if (frames % 10 == 0) {
-      movement_handler(snake, snake_size, last_move);
-    }
-
-    // Score calculation and frame reset
-    if (frames == round_frames) {
-      if (eaten_food < quota) {
-        Score -= (int)(Score / 2 + Score / (2 * (1 + beta * Score)));
-      } else {
-        Score += floorf(1000.0 * (float)eaten_food /
-                        log(1.0 + alpha + (float)frames));
+      // Move snake on a timer
+      if (frames_counter >= (FPS / 10)) { // (FPS / speed)
+        frames_counter = 0;
+        movement_handler(snake, snake_size, last_move);
+        if (check_game_over(snake, snake_size)) {
+          current_state = GAME_OVER;
+        } else {
+          update_food(&food, snake, &snake_size, &Score);
+        }
       }
-      frames = 0;
-      eaten_food = 0;
+    } break;
+    case GAME_OVER: {
+      if (IsKeyPressed(KEY_R)) {
+        reset_game(snake, &snake_size, &food, &Score, last_move);
+        current_state = GAMEPLAY;
+      }
+    } break;
+    }
+    update_grid(grid, food, snake, snake_size);
+
+    // --- DRAWING LOGIC ---
+    BeginDrawing();
+    ClearBackground(BLACK);
+    draw_grid(grid, Score);
+
+    if (current_state == GAME_OVER) {
+      draw_game_over_screen();
     }
 
-    // Check for exit conditions
-    exiter(snake, snake_size);
-
-    // Render the game
-    draw_grid(grid, Score);
     EndDrawing();
   }
-  // Debugger :
-  // Clean up and show final score
-  printf("Score is : %d \n", Score);
-  CloseWindow();
+
+  // --- Cleanup ---
   collect_garbage(grid, snake);
+  CloseWindow();
 }
 
 int main() {
